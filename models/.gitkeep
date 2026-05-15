@@ -1,0 +1,3 @@
+# Place GGUF / safetensors models here. This directory is NOT tracked in git.
+# Expected files for M1:
+#   - sulphur_prompt_enhancer_model-q8_0.gguf  (optional)

@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Models & heavy assets (NOT in git)
+models/*
+!models/.gitkeep
+workflows/*.json
+!workflows/_placeholders.md
+
+# Outputs
+output/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Local config (secrets / paths)
+.env
+config/local.yaml

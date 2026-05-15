@@ -1,0 +1,16 @@
+sulphur2_t2v:
+  # 在 ComfyUI Web UI 中加载 workflows/sulphur2_t2v.json
+  # 打开 Settings → Show node IDs，把每个节点的数字 ID 填到这里
+  # 详见 workflows/_placeholders.md
+  positive_prompt_node: ""
+  negative_prompt_node: ""
+  sampler_node: ""
+  empty_latent_node: ""
+  save_video_node: ""
+
+sulphur2_i2v:
+  positive_prompt_node: ""
+  negative_prompt_node: ""
+  sampler_node: ""
+  load_image_node: ""
+  save_video_node: ""

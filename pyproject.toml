@@ -1,0 +1,68 @@
+[project]
+name = "agents-video-pipeline"
+version = "0.1.0"
+description = "Local-first multi-agent video production line (Sulphur 2 + Gemma 4 + ComfyUI)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+dependencies = [
+    # HTTP / WS
+    "httpx>=0.27",
+    "websockets>=12.0",
+    # Schema / Config
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    # CLI / Logging
+    "typer>=0.12",
+    "rich>=13.7",
+    "loguru>=0.7",
+    # LLM
+    "ollama>=0.3",
+    # Sulphur prompt enhancer (GGUF) —— 安装时若失败可临时注释，M1 enhancer 是可选
+    "llama-cpp-python>=0.3",
+    # Media
+    "ffmpeg-python>=0.2",
+    # Async / Reliability
+    "anyio>=4.4",
+    "tenacity>=8.5",
+]
+
+[project.optional-dependencies]
+# M2 之后才需要的依赖（编排/Web）
+orchestration = [
+    "langgraph>=0.2",
+    "langchain>=0.3",
+    "langchain-ollama>=0.2",
+]
+api = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+agents-cli = "src.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
