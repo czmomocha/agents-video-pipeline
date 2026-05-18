@@ -75,7 +75,19 @@ scripts/      # 一次性脚本
 
 - [x] 架构设计 v1.0
 - [x] M1 实现清单
-- [x] 项目骨架
-- [ ] M1 可执行：`cli shot` 端到端跑通（**进行中**）
-- [ ] M2 多镜头成片
-- [ ] M3 批量生产线
+- [x] 项目骨架（v0.1.0-scaffold）
+- [x] **M2-A：DirectorAgent + 全量 schema**（本次提交）
+- [x] **M2-B：LangGraph 最小图（director→fanout→prompt_smith）**（本次提交）
+- [ ] M2-C：Scriptwriter + Storyboarder（下一步）
+- [ ] M2-D：ShotProducer 接 ComfyUI + 配音 + 字幕 + FFmpeg 合成
+- [ ] M3：批量生产线
+- [ ] M1 端到端跑通（依赖你 Mac 端 ComfyUI 准备就绪）
+
+## 命令速查
+
+| 命令 | 用途 | 需要在线服务 |
+|---|---|---|
+| `python -m src.cli env` | 环境自检 | — |
+| `python -m src.cli plan -t "..."` | 仅跑 Director，输出 ProductionPlan | Ollama + Gemma 4 |
+| `python -m src.cli plan-and-prompts -t "..."` | LangGraph 跑 director→fanout→prompt_smith | Ollama + Gemma 4 |
+| `python -m src.cli shot -p "..."` | 单镜头出片（M1 闭环） | Ollama + ComfyUI |

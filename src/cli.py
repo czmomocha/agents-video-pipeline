@@ -103,6 +103,115 @@ async def _shot_cmd(
 
 
 @app.command()
+def plan(
+    topic: str = typer.Option(..., "--topic", "-t", help="主题（中/英文均可）"),
+    duration: int = typer.Option(None, "--duration", "-d", help="总时长提示（秒），可选"),
+    style: str = typer.Option(None, "--style", "-s", help="风格提示，如 cinematic / anime"),
+    out: Path = typer.Option(None, "--out", "-o", help="输出 plan.json，默认打印不落盘"),
+):
+    """M2-A：仅运行 Director，产出 ProductionPlan（不出片）。"""
+    asyncio.run(_plan_cmd(topic, duration, style, out))
+
+
+async def _plan_cmd(topic: str, duration: int | None, style: str | None, out: Path | None) -> None:
+    from src.agents.director import run_director
+
+    s = load_settings()
+    llm = make_llm(s)
+
+    console.rule(f"[bold green]Director[/]  topic={topic!r}")
+    plan = await run_director(
+        topic=topic,
+        llm=llm,
+        settings=s,
+        target_duration_hint=duration,
+        style_hint=style,
+    )
+    await llm.aclose()
+
+    _print_plan(plan)
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[dim]saved → {out}[/]")
+
+
+@app.command(name="plan-and-prompts")
+def plan_and_prompts(
+    topic: str = typer.Option(..., "--topic", "-t", help="主题"),
+    duration: int = typer.Option(None, "--duration", "-d", help="总时长提示（秒）"),
+    use_enhancer: bool = typer.Option(False, "--use-enhancer/--no-enhancer", help="是否启用 Sulphur GGUF 增强"),
+    save: Path = typer.Option(None, "--save", help="保存完整 PipelineState 到 JSON"),
+):
+    """M2-B：跑 LangGraph 图 director→fanout→prompt_smith，产出 N 个 shot 的英文 prompt。"""
+    asyncio.run(_plan_and_prompts_cmd(topic, duration, use_enhancer, save))
+
+
+async def _plan_and_prompts_cmd(
+    topic: str,
+    duration: int | None,
+    use_enhancer: bool,
+    save: Path | None,
+) -> None:
+    from src.orchestrator.graph import run_plan_and_prompts
+
+    s = load_settings()
+    llm = make_llm(s)
+    enhancer = make_sulphur_enhancer() if use_enhancer else None
+
+    console.rule(f"[bold green]Plan + Prompts[/]  topic={topic!r}")
+    final = await run_plan_and_prompts(
+        topic=topic,
+        llm=llm,
+        enhancer=enhancer,
+        settings=s,
+        target_duration_hint=duration,
+    )
+    await llm.aclose()
+
+    if final.plan:
+        _print_plan(final.plan)
+
+    console.rule("[bold cyan]Per-Shot Prompts[/]")
+    for ss in final.shots:
+        console.print(f"\n[bold]Shot {ss.idx}[/]  ({ss.duration_sec}s, {ss.camera_shot}/{ss.camera_motion})")
+        console.print(f"  [dim]intent:[/] {ss.visual_intent}")
+        if ss.positive_prompt:
+            console.print(f"  [bold cyan]+[/] {ss.positive_prompt}")
+        if ss.negative_prompt:
+            console.print(f"  [bold magenta]−[/] {ss.negative_prompt}")
+
+    if save is not None:
+        save.parent.mkdir(parents=True, exist_ok=True)
+        save.write_text(final.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"\n[dim]saved → {save}[/]")
+
+
+def _print_plan(plan) -> None:
+    """漂亮地打印 ProductionPlan。"""
+    table = Table(title=f"ProductionPlan — {plan.title}", show_header=True, show_lines=False)
+    table.add_column("Field", style="bold cyan")
+    table.add_column("Value")
+
+    table.add_row("Logline", plan.logline)
+    table.add_row("Audience", plan.audience)
+    table.add_row("Mood", plan.mood)
+    table.add_row("Total duration", f"{plan.total_duration_sec}s")
+    table.add_row("Shots", f"{plan.n_shots} × {plan.per_shot_duration_sec}s")
+    table.add_row("Pacing", plan.pacing)
+    table.add_row("Voiceover / Subs", f"{plan.needs_voiceover} / {plan.needs_subtitles}")
+    table.add_row("BGM mood", plan.bgm_mood or "—")
+    table.add_row("─ Style ─", "")
+    table.add_row("  art_style", plan.style.art_style)
+    table.add_row("  color_palette", plan.style.color_palette)
+    table.add_row("  lighting", plan.style.lighting)
+    table.add_row("  camera_language", plan.style.camera_language)
+    table.add_row("  aspect_ratio", plan.style.aspect_ratio)
+    console.print(table)
+
+
+@app.command()
 def env():
     """检查环境（ComfyUI / Ollama / FFmpeg / 模型 / 节点映射）。"""
     asyncio.run(_env_cmd())

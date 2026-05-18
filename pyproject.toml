@@ -22,6 +22,8 @@ dependencies = [
     "ollama>=0.3",
     # Sulphur prompt enhancer (GGUF) —— 安装时若失败可临时注释，M1 enhancer 是可选
     "llama-cpp-python>=0.3",
+    # Orchestration（M2 起需要）
+    "langgraph>=0.2",
     # Media
     "ffmpeg-python>=0.2",
     # Async / Reliability
@@ -30,9 +32,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# M2 之后才需要的依赖（编排/Web）
-orchestration = [
-    "langgraph>=0.2",
+# 完整编排栈（含 LangChain 集成，M3 起按需启用）
+orchestration-full = [
     "langchain>=0.3",
     "langchain-ollama>=0.2",
 ]
