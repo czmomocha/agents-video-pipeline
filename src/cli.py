@@ -325,6 +325,101 @@ def _print_storyboard(storyboard) -> None:
 
 
 @app.command()
+def render(
+    topic: str = typer.Option(..., "--topic", "-t", help="主题（中/英文均可）"),
+    duration: int = typer.Option(None, "--duration", "-d", help="总时长提示（秒）"),
+    use_enhancer: bool = typer.Option(False, "--use-enhancer/--no-enhancer", help="启用 Sulphur GGUF 增强"),
+    no_i2v: bool = typer.Option(False, "--no-i2v", help="禁用 I2V 链式（全部 T2V，调试用）"),
+    save_state: Path = typer.Option(None, "--save-state", help="保存 PipelineState 到 JSON"),
+):
+    """M2-D-1：端到端渲染（topic → final.mp4，无配音）。
+
+    需要 Ollama + ComfyUI + FFmpeg 在线。
+    """
+    asyncio.run(_render_cmd(topic, duration, use_enhancer, no_i2v, save_state))
+
+
+async def _render_cmd(
+    topic: str,
+    duration: int | None,
+    use_enhancer: bool,
+    no_i2v: bool,
+    save_state: Path | None,
+) -> None:
+    from src.adapters.comfyui import (
+        make_comfy_client,
+        make_sulphur_i2v_runner,
+        make_sulphur_t2v_runner,
+    )
+    from src.orchestrator.graph import run_full_render
+
+    s = load_settings()
+    console.rule(f"[bold green]Full Render[/]  topic={topic!r}")
+
+    # 准备依赖
+    comfy = make_comfy_client(s)
+    llm = make_llm(s)
+    enhancer = make_sulphur_enhancer() if use_enhancer else None
+    scheduler = HardwareScheduler(comfy=comfy, ollama=llm, enabled=s.enable_mutex_locks)
+
+    t2v = make_sulphur_t2v_runner(comfy=comfy, settings=s)
+    i2v = None
+    if not no_i2v:
+        try:
+            i2v = make_sulphur_i2v_runner(comfy=comfy, settings=s)
+            console.print("[dim]I2V chain enabled[/]")
+        except (FileNotFoundError, ValueError) as e:
+            console.print(f"[yellow]I2V workflow not configured ({e}); falling back to T2V-only[/]")
+    else:
+        console.print("[yellow]I2V disabled by --no-i2v; all shots will be T2V[/]")
+
+    final = await run_full_render(
+        topic=topic,
+        llm=llm,
+        t2v=t2v,
+        i2v=i2v,
+        scheduler=scheduler,
+        enhancer=enhancer,
+        settings=s,
+        target_duration_hint=duration,
+    )
+
+    await comfy.aclose()
+    await llm.aclose()
+
+    # 输出
+    if final.plan:
+        _print_plan(final.plan)
+    if final.script:
+        _print_script(final.script)
+    if final.storyboard:
+        _print_storyboard(final.storyboard)
+
+    console.rule("[bold cyan]Render Result[/]")
+    rendered = sum(1 for ss in final.shots if ss.clip_path is not None)
+    console.print(f"  [bold]rendered:[/] {rendered}/{len(final.shots)} shots")
+    for ss in final.shots:
+        if ss.clip_path:
+            mode = "I2V" if ss.use_i2v_from_prev else "T2V"
+            console.print(f"    [green]✓[/] shot {ss.idx} ({mode}) → {ss.clip_path.name}")
+        else:
+            err = ss.errors[-1] if ss.errors else "unknown"
+            console.print(f"    [red]✗[/] shot {ss.idx} failed: {err}")
+
+    if final.output_path:
+        console.rule("[bold green]✓ DONE[/]")
+        console.print(f"[bold]Final video:[/] {final.output_path}")
+        console.print(f"[dim]metrics:[/] {final.metrics}")
+    else:
+        console.rule("[bold red]✗ FAILED[/]")
+
+    if save_state is not None:
+        save_state.parent.mkdir(parents=True, exist_ok=True)
+        save_state.write_text(final.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[dim]state saved → {save_state}[/]")
+
+
+@app.command()
 def env():
     """检查环境（ComfyUI / Ollama / FFmpeg / 模型 / 节点映射）。"""
     asyncio.run(_env_cmd())

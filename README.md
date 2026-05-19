@@ -77,9 +77,10 @@ scripts/      # 一次性脚本
 - [x] M1 实现清单
 - [x] 项目骨架（v0.1.0-scaffold）
 - [x] M2-A：DirectorAgent + 全量 schema
-- [x] M2-B：LangGraph 最小图（director→fanout→prompt_smith）
-- [x] **M2-C：Scriptwriter + Storyboarder**（本次提交，替换 fanout 占位）
-- [ ] M2-D：ShotProducer 接 ComfyUI + Voice + Subtitle + Compositor
+- [x] M2-B：LangGraph 最小图
+- [x] M2-C：Scriptwriter + Storyboarder（v0.2.0-director）
+- [x] **M2-D-1：ShotProducer + Compositor（端到端无声成片）**（本次提交）
+- [ ] M2-D-2：Voice + Subtitle（配音 + 字幕烧录）
 - [ ] M3：批量生产线
 - [ ] M1 端到端跑通（依赖你 Mac 端 ComfyUI 准备就绪）
 
@@ -91,5 +92,6 @@ scripts/      # 一次性脚本
 | `python -m src.cli plan -t "..."` | 仅跑 Director，输出 ProductionPlan | Ollama + Gemma 4 |
 | `python -m src.cli script -p plan.json` | 仅跑 Scriptwriter | Ollama + Gemma 4 |
 | `python -m src.cli storyboard -p plan.json -S script.json` | 仅跑 Storyboarder | Ollama + Gemma 4 |
-| `python -m src.cli plan-and-prompts -t "..."` | 完整 LangGraph：director→scriptwriter→storyboarder→prompt_smith | Ollama + Gemma 4 |
+| `python -m src.cli plan-and-prompts -t "..."` | 完整 LLM 规划链 | Ollama + Gemma 4 |
+| `python -m src.cli render -t "..."` | **端到端：topic→final.mp4（无声）** | Ollama + ComfyUI + FFmpeg |
 | `python -m src.cli shot -p "..."` | 单镜头出片（M1 闭环） | Ollama + ComfyUI |

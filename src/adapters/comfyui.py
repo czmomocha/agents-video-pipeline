@@ -16,6 +16,7 @@ import websockets
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.adapters.workflow_template import (
+    inject_i2v_params,
     inject_t2v_params,
     load_workflow,
     validate_mapping,
@@ -303,6 +304,136 @@ class SulphurT2VRunner:
 
 
 # ─────────────────────────────────────────────────────────────────
+#  Sulphur 2 I2V Runner（图生视频，用于镜头链式连续性）
+# ─────────────────────────────────────────────────────────────────
+
+
+class SulphurI2VRunner:
+    """Sulphur 2 图生视频高层接口。
+
+    与 T2V 的差异：
+    - 输入额外的 init_image_path（来自上一镜头末帧）
+    - 分辨率由 init_image 自身决定，不在这里指定
+    - OOM 降档策略：缩短 duration（6→4→3 秒）而非降分辨率
+    """
+
+    def __init__(
+        self,
+        comfy: ComfyUIClient,
+        workflow_template: dict,
+        mapping: NodeMapping,
+        settings: Settings | None = None,
+    ):
+        self._comfy = comfy
+        self._wf = workflow_template
+        self._mapping = mapping
+        self._s = settings or load_settings()
+
+        errs = validate_mapping(workflow_template, mapping, mode="i2v")
+        if errs:
+            raise ValueError(
+                "Sulphur2 I2V workflow 节点映射校验失败：\n  - "
+                + "\n  - ".join(errs)
+                + "\n请按 workflows/_placeholders.md 配置 config/node_mapping.yaml"
+            )
+
+    async def run(
+        self,
+        prompt: str,
+        init_image_path: Path,
+        negative_prompt: str = "",
+        duration_sec: int = 6,
+        seed: int | None = None,
+        fps: int = 24,
+        save_to: Path | None = None,
+        progress_cb=None,
+    ) -> Path:
+        """执行 I2V，返回视频文件路径。OOM 时缩短 duration 重试。"""
+        if not init_image_path.exists():
+            raise FileNotFoundError(f"init_image not found: {init_image_path}")
+
+        seed = seed if seed is not None else random.randint(1, 2**31 - 1)
+        negative = negative_prompt or self._s.default_negative_prompt
+        if save_to is None:
+            from src.config import task_output_dir
+            save_to = task_output_dir() / "shots" / "01.mp4"
+
+        # OOM 降档：从请求时长开始，逐步缩到 4s / 3s
+        durations_chain = [duration_sec]
+        for d in (4, 3):
+            if d < duration_sec and d not in durations_chain:
+                durations_chain.append(d)
+
+        last_err: Exception | None = None
+        for attempt_dur in durations_chain:
+            try:
+                return await self._run_once(
+                    prompt=prompt,
+                    init_image_path=init_image_path,
+                    negative=negative,
+                    duration_sec=attempt_dur,
+                    seed=seed,
+                    fps=fps,
+                    save_to=save_to,
+                    progress_cb=progress_cb,
+                )
+            except ComfyUIOOMError as e:
+                last_err = e
+                log.warning(f"[sulphur] I2V OOM at {attempt_dur}s, falling back...")
+                await self._comfy.free_memory()
+                await asyncio.sleep(2)
+                continue
+        raise ComfyUIOOMError(f"All I2V duration fallbacks failed: {last_err}")
+
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=2, min=2, max=10),
+        reraise=True,
+    )
+    async def _run_once(
+        self,
+        *,
+        prompt: str,
+        init_image_path: Path,
+        negative: str,
+        duration_sec: int,
+        seed: int,
+        fps: int,
+        save_to: Path,
+        progress_cb,
+    ) -> Path:
+        num_frames = duration_to_frames(duration_sec, fps)
+
+        log.info(
+            f"[sulphur] I2V start: {duration_sec}s ({num_frames}f) "
+            f"init={init_image_path.name} seed={seed} prompt={prompt[:60]!r}..."
+        )
+
+        wf = inject_i2v_params(
+            self._wf,
+            self._mapping,
+            positive=prompt,
+            negative=negative,
+            init_image_path=init_image_path,
+            num_frames=num_frames,
+            seed=seed,
+            fps=fps,
+        )
+
+        prompt_id = await self._comfy.submit_workflow(wf)
+        history = await self._comfy.wait_for_completion(
+            prompt_id,
+            timeout=self._s.comfyui_request_timeout_sec,
+            progress_cb=progress_cb,
+        )
+        out = await self._comfy.fetch_output_video(
+            history, save_to=save_to, save_node_id=self._mapping.save_video_node
+        )
+        log.info(f"[sulphur] I2V done → {out}")
+        return out
+
+
+# ─────────────────────────────────────────────────────────────────
 #  工厂
 # ─────────────────────────────────────────────────────────────────
 
@@ -322,3 +453,15 @@ def make_sulphur_t2v_runner(
     workflow = load_workflow(wf_path)
     mapping = load_node_mapping("sulphur2_t2v")
     return SulphurT2VRunner(comfy, workflow, mapping, settings=s)
+
+
+def make_sulphur_i2v_runner(
+    comfy: ComfyUIClient | None = None,
+    settings: Settings | None = None,
+) -> SulphurI2VRunner:
+    s = settings or load_settings()
+    comfy = comfy or make_comfy_client(s)
+    wf_path = s.workflows_dir / s.comfyui_workflow_i2v
+    workflow = load_workflow(wf_path)
+    mapping = load_node_mapping("sulphur2_i2v")
+    return SulphurI2VRunner(comfy, workflow, mapping, settings=s)
