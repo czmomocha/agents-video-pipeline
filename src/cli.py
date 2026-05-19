@@ -144,7 +144,7 @@ def plan_and_prompts(
     use_enhancer: bool = typer.Option(False, "--use-enhancer/--no-enhancer", help="是否启用 Sulphur GGUF 增强"),
     save: Path = typer.Option(None, "--save", help="保存完整 PipelineState 到 JSON"),
 ):
-    """M2-B：跑 LangGraph 图 director→fanout→prompt_smith，产出 N 个 shot 的英文 prompt。"""
+    """M2-C：跑 LangGraph 完整链路 director→scriptwriter→storyboarder→prompt_smith。"""
     asyncio.run(_plan_and_prompts_cmd(topic, duration, use_enhancer, save))
 
 
@@ -172,10 +172,18 @@ async def _plan_and_prompts_cmd(
 
     if final.plan:
         _print_plan(final.plan)
+    if final.script:
+        _print_script(final.script)
+    if final.storyboard:
+        _print_storyboard(final.storyboard)
 
     console.rule("[bold cyan]Per-Shot Prompts[/]")
     for ss in final.shots:
-        console.print(f"\n[bold]Shot {ss.idx}[/]  ({ss.duration_sec}s, {ss.camera_shot}/{ss.camera_motion})")
+        i2v_tag = "[yellow](I2V chain)[/]" if ss.use_i2v_from_prev else "[dim](T2V)[/]"
+        console.print(
+            f"\n[bold]Shot {ss.idx}[/]  {i2v_tag}  "
+            f"({ss.duration_sec}s, {ss.camera_shot}/{ss.camera_motion})"
+        )
         console.print(f"  [dim]intent:[/] {ss.visual_intent}")
         if ss.positive_prompt:
             console.print(f"  [bold cyan]+[/] {ss.positive_prompt}")
@@ -186,6 +194,66 @@ async def _plan_and_prompts_cmd(
         save.parent.mkdir(parents=True, exist_ok=True)
         save.write_text(final.model_dump_json(indent=2), encoding="utf-8")
         console.print(f"\n[dim]saved → {save}[/]")
+
+
+@app.command()
+def script(
+    plan_file: Path = typer.Option(..., "--plan", "-p", help="ProductionPlan JSON 文件路径"),
+    out: Path = typer.Option(None, "--out", "-o", help="输出 script.json"),
+):
+    """M2-C：单独跑 Scriptwriter（输入：plan.json，输出：script.json）。"""
+    asyncio.run(_script_cmd(plan_file, out))
+
+
+async def _script_cmd(plan_file: Path, out: Path | None) -> None:
+    from src.agents.scriptwriter import run_scriptwriter
+    from src.orchestrator.state import ProductionPlan
+
+    plan_obj = ProductionPlan.model_validate_json(plan_file.read_text(encoding="utf-8"))
+
+    s = load_settings()
+    llm = make_llm(s)
+    console.rule(f"[bold green]Scriptwriter[/]  title={plan_obj.title!r}")
+    sc = await run_scriptwriter(plan_obj, llm=llm, settings=s)
+    await llm.aclose()
+
+    _print_script(sc)
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(sc.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[dim]saved → {out}[/]")
+
+
+@app.command()
+def storyboard(
+    plan_file: Path = typer.Option(..., "--plan", "-p", help="ProductionPlan JSON 文件"),
+    script_file: Path = typer.Option(..., "--script", "-S", help="Script JSON 文件"),
+    out: Path = typer.Option(None, "--out", "-o", help="输出 storyboard.json"),
+):
+    """M2-C：单独跑 Storyboarder（输入：plan.json + script.json）。"""
+    asyncio.run(_storyboard_cmd(plan_file, script_file, out))
+
+
+async def _storyboard_cmd(plan_file: Path, script_file: Path, out: Path | None) -> None:
+    from src.agents.storyboarder import run_storyboarder
+    from src.orchestrator.state import ProductionPlan, Script
+
+    plan_obj = ProductionPlan.model_validate_json(plan_file.read_text(encoding="utf-8"))
+    script_obj = Script.model_validate_json(script_file.read_text(encoding="utf-8"))
+
+    s = load_settings()
+    llm = make_llm(s)
+    console.rule(f"[bold green]Storyboarder[/]  scenes={len(script_obj.scenes)}")
+    sb = await run_storyboarder(plan_obj, script_obj, llm=llm, settings=s)
+    await llm.aclose()
+
+    _print_storyboard(sb)
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(sb.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[dim]saved → {out}[/]")
 
 
 def _print_plan(plan) -> None:
@@ -208,6 +276,51 @@ def _print_plan(plan) -> None:
     table.add_row("  lighting", plan.style.lighting)
     table.add_row("  camera_language", plan.style.camera_language)
     table.add_row("  aspect_ratio", plan.style.aspect_ratio)
+    console.print(table)
+
+
+def _print_script(script) -> None:
+    """漂亮地打印 Script（中文配音稿）。"""
+    table = Table(
+        title=f"Script — {script.title}  ({len(script.scenes)} scenes, "
+              f"{sum(sc.duration_sec for sc in script.scenes)}s total)",
+        show_lines=True,
+    )
+    table.add_column("#", style="bold")
+    table.add_column("Dur", style="dim", justify="right")
+    table.add_column("Mood", style="dim")
+    table.add_column("Narration")
+    for sc in script.scenes:
+        table.add_row(str(sc.idx), f"{sc.duration_sec}s", sc.mood, sc.narration)
+    console.print(table)
+
+
+def _print_storyboard(storyboard) -> None:
+    """漂亮地打印 Storyboard。"""
+    i2v_count = sum(1 for sh in storyboard.shots if sh.use_i2v_from_prev)
+    table = Table(
+        title=f"Storyboard — {len(storyboard.shots)} shots  "
+              f"(I2V chain: {i2v_count}/{len(storyboard.shots)})",
+        show_lines=True,
+    )
+    table.add_column("#", style="bold")
+    table.add_column("Dur", style="dim", justify="right")
+    table.add_column("Shot", style="cyan")
+    table.add_column("Motion", style="cyan")
+    table.add_column("→Next", style="dim")
+    table.add_column("I2V", justify="center")
+    table.add_column("Visual Intent")
+    for sh in storyboard.shots:
+        i2v_mark = "[yellow]●[/]" if sh.use_i2v_from_prev else "[dim]○[/]"
+        table.add_row(
+            str(sh.idx),
+            f"{sh.duration_sec}s",
+            sh.camera_shot,
+            sh.camera_motion,
+            sh.transition_to_next,
+            i2v_mark,
+            sh.visual_intent,
+        )
     console.print(table)
 
 
