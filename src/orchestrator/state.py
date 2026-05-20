@@ -136,6 +136,9 @@ class ShotState(BaseModel):
     duration_sec: int = 6
     use_i2v_from_prev: bool = False
 
+    # 来自 Script（用于 Voice Agent，可空表示该镜头不配音）
+    narration: str = ""
+
     # PromptSmith 产物
     positive_prompt: str | None = None
     negative_prompt: str = ""

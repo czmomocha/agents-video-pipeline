@@ -79,19 +79,32 @@ scripts/      # 一次性脚本
 - [x] M2-A：DirectorAgent + 全量 schema
 - [x] M2-B：LangGraph 最小图
 - [x] M2-C：Scriptwriter + Storyboarder（v0.2.0-director）
-- [x] **M2-D-1：ShotProducer + Compositor（端到端无声成片）**（本次提交）
-- [ ] M2-D-2：Voice + Subtitle（配音 + 字幕烧录）
-- [ ] M3：批量生产线
-- [ ] M1 端到端跑通（依赖你 Mac 端 ComfyUI 准备就绪）
+- [x] M2-D-1：ShotProducer + Compositor，端到端无声成片（v0.3.0-render）
+- [x] **M2-D-2：Voice + Subtitle，端到端有声+字幕成片**（本次提交）
+- [ ] M3：批量生产线（队列 + 定时 + Web UI + 断点续跑）
 
 ## 命令速查
 
 | 命令 | 用途 | 需要在线服务 |
 |---|---|---|
 | `python -m src.cli env` | 环境自检 | — |
-| `python -m src.cli plan -t "..."` | 仅跑 Director，输出 ProductionPlan | Ollama + Gemma 4 |
-| `python -m src.cli script -p plan.json` | 仅跑 Scriptwriter | Ollama + Gemma 4 |
-| `python -m src.cli storyboard -p plan.json -S script.json` | 仅跑 Storyboarder | Ollama + Gemma 4 |
+| `python -m src.cli plan -t "..."` | 仅 Director | Ollama + Gemma 4 |
+| `python -m src.cli script -p plan.json` | 仅 Scriptwriter | Ollama + Gemma 4 |
+| `python -m src.cli storyboard -p plan.json -S script.json` | 仅 Storyboarder | Ollama + Gemma 4 |
 | `python -m src.cli plan-and-prompts -t "..."` | 完整 LLM 规划链 | Ollama + Gemma 4 |
-| `python -m src.cli render -t "..."` | **端到端：topic→final.mp4（无声）** | Ollama + ComfyUI + FFmpeg |
+| `python -m src.cli render -t "..."` | **端到端：topic→final.mp4（含配音+字幕）** | Ollama + ComfyUI + FFmpeg + (TTS, ASR) |
 | `python -m src.cli shot -p "..."` | 单镜头出片（M1 闭环） | Ollama + ComfyUI |
+
+## render 命令选项
+
+| Flag | 说明 |
+|---|---|
+| `--no-i2v` | 全部走 T2V，调试用 |
+| `--tts auto` | 自动选 TTS 后端（默认 piper > edge > silent） |
+| `--tts piper` | 强制 piper-tts（纯本地推荐） |
+| `--tts edge` | edge-tts（云端，需联网，中文优秀） |
+| `--tts gpt_sovits` | GPT-SoVITS（最佳中文，待 Mac 端就绪） |
+| `--tts none` | 跳过配音 |
+| `--no-subtitles` | 跳过字幕 |
+| `--no-burn-subs` | 生成 .srt 但不烧录到视频 |
+| `--use-enhancer` | 启用 Sulphur 自带的 GGUF prompt enhancer |
