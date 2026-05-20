@@ -95,7 +95,7 @@ class PiperTTS:
     """Piper TTS（rhasspy/piper），纯本地、轻量、CLI 调用。
 
     需要：
-      brew install piper-tts   或   pip install piper-tts
+      pip install piper-tts
       下载语音模型（.onnx + .json）到 models/piper/
     Mac 上推荐 zh_CN voices，参考：
       https://github.com/rhasspy/piper/blob/master/VOICES.md
@@ -125,7 +125,7 @@ class PiperTTS:
         if not await self.health():
             raise TTSError(
                 f"piper not ready (exe={self.exe!r}, model={self.model_path}). "
-                f"Install: brew install piper-tts; download voice to models/piper/"
+                f"Install: pip install piper-tts; download voice to models/piper/"
             )
         out_path.parent.mkdir(parents=True, exist_ok=True)
         cmd = [

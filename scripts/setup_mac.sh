@@ -10,7 +10,7 @@ brew upgrade ollama || true
 
 # M2-D-2: TTS + ASR
 which whisper-cli >/dev/null 2>&1 || brew install whisper-cpp || true
-which piper      >/dev/null 2>&1 || brew install piper-tts || pip install piper-tts || true
+
 
 echo "==> 2) Verify Ollama version (≥ 0.20.3 required for Gemma 4 tool calling)"
 ollama --version
@@ -22,6 +22,10 @@ echo "==> 4) Python venv & deps"
 cd "$(dirname "$0")/.."
 uv venv --python 3.11
 uv sync
+
+echo "==> 4.1) Install Piper TTS (via pip)"
+source .venv/bin/activate
+pip install piper-tts || echo "⚠️  piper-tts installation failed, please install manually: pip install piper-tts"
 
 cat <<'EOF'
 
