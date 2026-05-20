@@ -330,13 +330,22 @@ def render(
     duration: int = typer.Option(None, "--duration", "-d", help="总时长提示（秒）"),
     use_enhancer: bool = typer.Option(False, "--use-enhancer/--no-enhancer", help="启用 Sulphur GGUF 增强"),
     no_i2v: bool = typer.Option(False, "--no-i2v", help="禁用 I2V 链式（全部 T2V，调试用）"),
+    tts: str = typer.Option(
+        "auto",
+        "--tts",
+        help="TTS 后端：auto/piper/edge/gpt_sovits/silent/none。auto=按可用性自动选；none=跳过配音",
+    ),
+    no_subtitles: bool = typer.Option(False, "--no-subtitles", help="跳过字幕生成"),
+    no_burn_subs: bool = typer.Option(False, "--no-burn-subs", help="不烧录字幕（但保留 .srt 文件）"),
     save_state: Path = typer.Option(None, "--save-state", help="保存 PipelineState 到 JSON"),
 ):
-    """M2-D-1：端到端渲染（topic → final.mp4，无配音）。
+    """M2-D-2：端到端渲染（topic → final.mp4，含配音 + 字幕）。
 
-    需要 Ollama + ComfyUI + FFmpeg 在线。
+    需要 Ollama + ComfyUI + FFmpeg 在线。可选：piper/edge-tts、whisper.cpp。
     """
-    asyncio.run(_render_cmd(topic, duration, use_enhancer, no_i2v, save_state))
+    asyncio.run(_render_cmd(
+        topic, duration, use_enhancer, no_i2v, tts, no_subtitles, no_burn_subs, save_state,
+    ))
 
 
 async def _render_cmd(
@@ -344,13 +353,18 @@ async def _render_cmd(
     duration: int | None,
     use_enhancer: bool,
     no_i2v: bool,
+    tts_choice: str,
+    no_subtitles: bool,
+    no_burn_subs: bool,
     save_state: Path | None,
 ) -> None:
+    from src.adapters.asr import make_whisper_asr
     from src.adapters.comfyui import (
         make_comfy_client,
         make_sulphur_i2v_runner,
         make_sulphur_t2v_runner,
     )
+    from src.adapters.tts import make_best_available_tts, make_tts_provider
     from src.orchestrator.graph import run_full_render
 
     s = load_settings()
@@ -373,6 +387,34 @@ async def _render_cmd(
     else:
         console.print("[yellow]I2V disabled by --no-i2v; all shots will be T2V[/]")
 
+    # —— TTS ——
+    tts = None
+    if tts_choice == "none":
+        console.print("[yellow]TTS disabled by --tts none; final video will be silent[/]")
+    elif tts_choice == "auto":
+        tts = await make_best_available_tts(s, preference=["piper", "edge", "silent"])
+        console.print(f"[dim]TTS backend: {tts.backend_name}[/]")
+    else:
+        tts = make_tts_provider(tts_choice, settings=s)  # type: ignore[arg-type]
+        if not await tts.health():
+            console.print(f"[yellow]TTS backend {tts_choice!r} not ready; falling back to silent[/]")
+            from src.adapters.tts import SilentTTS
+            tts = SilentTTS()
+        else:
+            console.print(f"[dim]TTS backend: {tts_choice}[/]")
+
+    # —— ASR ——
+    asr = None
+    if no_subtitles:
+        console.print("[yellow]Subtitles disabled by --no-subtitles[/]")
+    else:
+        asr = make_whisper_asr(s)
+        if await asr.health():
+            console.print("[dim]Whisper.cpp ready[/]")
+        else:
+            console.print("[yellow]Whisper.cpp not available; SRT will use text-uniform fallback[/]")
+
+    # —— 跑图 ——
     final = await run_full_render(
         topic=topic,
         llm=llm,
@@ -380,6 +422,9 @@ async def _render_cmd(
         i2v=i2v,
         scheduler=scheduler,
         enhancer=enhancer,
+        tts=tts,
+        asr=asr if not no_subtitles else None,
+        burn_srt=not no_burn_subs and not no_subtitles,
         settings=s,
         target_duration_hint=duration,
     )
@@ -397,14 +442,23 @@ async def _render_cmd(
 
     console.rule("[bold cyan]Render Result[/]")
     rendered = sum(1 for ss in final.shots if ss.clip_path is not None)
+    voiced = sum(1 for ss in final.shots if ss.wav_path is not None)
+    subbed = sum(1 for ss in final.shots if ss.srt_path is not None)
     console.print(f"  [bold]rendered:[/] {rendered}/{len(final.shots)} shots")
+    console.print(f"  [bold]voiced:[/]   {voiced}/{len(final.shots)} shots")
+    console.print(f"  [bold]subtitled:[/] {subbed}/{len(final.shots)} shots")
     for ss in final.shots:
+        marks: list[str] = []
         if ss.clip_path:
             mode = "I2V" if ss.use_i2v_from_prev else "T2V"
-            console.print(f"    [green]✓[/] shot {ss.idx} ({mode}) → {ss.clip_path.name}")
+            marks.append(f"[green]✓ {mode}[/]")
         else:
-            err = ss.errors[-1] if ss.errors else "unknown"
-            console.print(f"    [red]✗[/] shot {ss.idx} failed: {err}")
+            marks.append("[red]✗ render[/]")
+        if ss.wav_path:
+            marks.append("[green]🔊[/]")
+        if ss.srt_path:
+            marks.append("[green]📝[/]")
+        console.print(f"    shot {ss.idx}  " + "  ".join(marks))
 
     if final.output_path:
         console.rule("[bold green]✓ DONE[/]")
@@ -470,6 +524,35 @@ async def _env_cmd() -> None:
         "Sulphur prompt enhancer (GGUF)",
         "✅" if s.sulphur_enhancer_gguf and s.sulphur_enhancer_gguf.exists() else "⚠️ optional",
         str(s.sulphur_enhancer_gguf or "(not found in models/)"),
+    )
+
+    # 7. TTS backends（M2-D-2）
+    from src.adapters.tts import make_tts_provider
+    for backend in ("piper", "edge", "gpt_sovits"):
+        try:
+            p = make_tts_provider(backend, settings=s)  # type: ignore[arg-type]
+            ok = await p.health()
+            mark = "✅" if ok else "⚠️ optional"
+            detail = ""
+            if backend == "piper":
+                models = list((s.models_dir / "piper").glob("*.onnx")) if (s.models_dir / "piper").exists() else []
+                detail = f"models/piper/{models[0].name}" if models else "no .onnx in models/piper/"
+            elif backend == "edge":
+                detail = "edge-tts package" + (" (installed)" if ok else " (not installed)")
+            elif backend == "gpt_sovits":
+                detail = "stub only (M2-D-2 placeholder)"
+            table.add_row(f"TTS: {backend}", mark, detail)
+        except Exception as e:
+            table.add_row(f"TTS: {backend}", "❌", f"err: {e}")
+
+    # 8. Whisper.cpp（M2-D-2）
+    from src.adapters.asr import make_whisper_asr
+    asr = make_whisper_asr(s)
+    asr_ok = await asr.health()
+    table.add_row(
+        "Whisper.cpp (subtitles)",
+        "✅" if asr_ok else "⚠️ optional",
+        f"exe={asr.exe} model={asr.model_path or '(not found in models/whisper/)'}",
     )
 
     console.print(table)
