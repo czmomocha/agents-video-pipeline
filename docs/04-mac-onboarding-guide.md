@@ -87,7 +87,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 ### 1.2 装齐工具链
 
 ```bash
-$ brew install git ffmpeg uv ollama whisper-cpp piper-tts
+$ brew install git ffmpeg uv ollama whisper-cpp
 ```
 
 每个工具的作用：
@@ -98,8 +98,23 @@ $ brew install git ffmpeg uv ollama whisper-cpp piper-tts
 | `ffmpeg` | 视频/音频处理 | ~80MB |
 | `uv` | Python 包管理（比 pip 快 10 倍） | ~30MB |
 | `ollama` | 本地 LLM 推理（Gemma 4 跑这个上面） | ~200MB |
-| `whisper-cpp` | 本地语音识别（生成字幕） | ~10MB |
-| `piper-tts` | 本地文本转语音（中文配音） | ~10MB |
+| `whisper-cpp` | 本地语音识别（生成字幕）| ~10MB |
+| | **注意**：Homebrew 包名是 `whisper-cpp`，但安装后的命令是 `whisper-cli` | |
+
+### 1.2.1 安装 Piper TTS（中文配音）
+
+Piper TTS 需要通过 pip 安装（不是 Homebrew）：
+
+```bash
+$ pip install piper-tts
+```
+
+或者如果你已经创建了虚拟环境：
+
+```bash
+$ source .venv/bin/activate
+$ pip install piper-tts
+```
 
 ### 1.3 验证
 
@@ -163,7 +178,7 @@ $ uv sync
 ```bash
 $ source .venv/bin/activate     # 激活虚拟环境
 $ python --version              # ✅ 3.11.x
-$ python -c "import langgraph; print(langgraph.__version__)"   # ✅ 输出版本号
+$ python -c "import langgraph; from importlib.metadata import version; print('langgraph', version('langgraph'))"   # ✅ 输出版本号
 ```
 
 > 💡 **以后所有命令都要在激活的虚拟环境里跑**。每次新开终端记得 `cd ~/projects/agents-video-pipeline && source .venv/bin/activate`
