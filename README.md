@@ -3,6 +3,10 @@
 > 基于 **Sulphur 2 (LTX-Video 2.3) + Gemma 4 + ComfyUI** 的全本地多智能体视频生产线。
 > 硬件目标：**Mac M1 / 32GB 统一内存**。
 
+![本地 AI 全自动视频生成工作流](docs/assets/pipeline-overview.png)
+
+> 一句话主题 → 8 个智能体协作 → 含画面/配音/字幕的成片视频，**全程离线本地运行**。
+
 ## 文档
 
 - 🚀 **[Mac 联调指南（小白友好）](docs/04-mac-onboarding-guide.md)** ← 第一次在 Mac 上跑请从这里开始
