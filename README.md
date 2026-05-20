@@ -5,8 +5,11 @@
 
 ## 文档
 
-- 架构设计：[`docs/01-architecture-design.md`](docs/01-architecture-design.md)
-- M1 实现清单：[`docs/02-m1-implementation-checklist.md`](docs/02-m1-implementation-checklist.md)
+- 🚀 **[Mac 联调指南（小白友好）](docs/04-mac-onboarding-guide.md)** ← 第一次在 Mac 上跑请从这里开始
+- 📊 [阶段性总结报告（v0.4.0-talkie）](docs/03-stage-summary-2026-05-20.md)
+- 📐 [架构设计 v1.0](docs/01-architecture-design.md)
+- 📋 [M1 实现清单](docs/02-m1-implementation-checklist.md)
+- 📝 [架构决策记录](docs/adr/)
 
 ## M1 阶段目标
 
