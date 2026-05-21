@@ -355,18 +355,82 @@ $ cd ComfyUI
 
 ### 4.3 装 ComfyUI 的 Python 依赖
 
-ComfyUI 有自己独立的 Python 环境（**不要和我们项目的 .venv 混用**）：
+ComfyUI 有自己独立的 Python 环境（**不要和我们项目的 `.venv` 混用**，依赖完全不同）。
+
+#### ⚠️ 这一步极易踩 3 个坑，先看再做
+
+| 坑 | 现象 | 根因 |
+|---|---|---|
+| 1. 没有 `python3.11` 命令 | `zsh: command not found: python3.11` | macOS 系统不自带，本项目用 `uv` 管 Python |
+| 2. venv 里没 pip | 后续 `pip install` 跑去 conda base 装了 | `uv venv` 默认不安装 pip，需要 `--seed` |
+| 3. conda base 默认激活 | 装出来的 torch 在 `~/miniconda3/...` 不在 venv | 激活 venv 前 conda base 还在，`pip` 走了 conda 的 |
+
+下面这套命令把三个坑全绕过。**严格按顺序执行**：
 
 ```bash
-$ python3.11 -m venv venv
+# 第 1 步：彻底退出 conda base（即使没用 conda 也跑一下，无害）
+$ conda deactivate 2>/dev/null
+$ conda deactivate 2>/dev/null    # 跑两次确保 base 也退掉
+
+# 第 2 步：用 uv 建 venv（--seed 关键，会把 pip 装进去）
+$ cd ~/AI/ComfyUI         # 或你 git clone 的实际路径
+$ uv venv --python 3.11 --seed venv
+
+# 第 3 步：激活
 $ source venv/bin/activate
-$ pip install --upgrade pip
-$ pip install -r requirements.txt
+
+# 第 4 步：验证 pip 真的来自 venv（关键防坑！）
+$ which pip
+# ✅ 应输出: <你的ComfyUI路径>/venv/bin/pip
+# ❌ 如果输出 /Users/<你>/miniconda3/bin/pip 或别的，停下来不要继续装
+```
+
+> 💡 没有 `uv`？项目根目录已经装过了，直接用 `~/.local/bin/uv` 也行；或 `brew install uv`。
+
+#### 安装依赖
+
+确认 `which pip` 指向 venv 之后：
+
+```bash
+# 用 python -m pip 强制走 venv 的 pip（双保险）
+$ python -m pip install --upgrade pip
+$ python -m pip install -r requirements.txt
 ```
 
 > ⏸️ 装 PyTorch 大约 5-10 分钟。
 >
-> 💡 如果你装的是 macOS 12+ 系统，PyTorch 会自动支持 MPS（Metal）后端，不需要额外配置。
+> 💡 macOS 12+ 系统上 PyTorch 会自动启用 MPS（Metal）后端，无需配置。
+
+#### 装完立刻验证（必须！）
+
+```bash
+$ python -c "import torch; print('torch', torch.__version__); print('  at', torch.__file__)"
+```
+
+✅ **预期输出**：
+
+```text
+torch 2.x.x
+  at /Users/<你>/Desktop/AI/ComfyUI/venv/lib/python3.11/site-packages/torch/__init__.py
+```
+
+❌ **如果 `at` 路径里出现 `miniconda3`**：说明依赖被装到 conda base 了（典型坑 3）。修复方式：
+
+```bash
+# 1) 在 conda base 里清掉误装的污染
+$ conda activate base
+$ pip uninstall -y torch torchvision torchaudio transformers tokenizers \
+    safetensors aiohttp einops kornia kornia_rs av blake3 spandrel \
+    torchsde pydantic-settings simpleeval comfyui-embedded-docs \
+    comfyui-workflow-templates comfyui-workflow-templates-core \
+    comfyui-workflow-templates-media-api comfyui-workflow-templates-media-image \
+    comfyui-workflow-templates-media-other comfyui-workflow-templates-media-video
+$ conda deactivate
+
+# 2) 回到 4.3 第 1 步重做（这次照顺序走，别跳）
+```
+
+> ⚠️ 上述卸载列表只针对"被 ComfyUI requirements.txt 误装到 conda base"的场景。如果你 conda base 里有别的项目在用 `torch` / `transformers`，**先别清这两个**，留着也不影响 ComfyUI venv（venv 是隔离的）。
 
 ### 4.4 第一次启动 ComfyUI（无模型测试）
 
