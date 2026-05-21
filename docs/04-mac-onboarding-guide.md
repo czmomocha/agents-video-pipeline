@@ -275,6 +275,122 @@ $ python -m src.cli plan-and-prompts -t "雨夜便利店里的相遇" --save /tm
 > 目标：把 ComfyUI 和 Sulphur 2 模型装好，能在浏览器里出一段视频
 > 这是整个过程**最容易踩坑**的阶段，请耐心。
 
+### 4.0 如果你已经装过 ComfyUI.dmg，是否会冲突？
+
+**结论：一般不会冲突，但不要同时启动两个 ComfyUI 实例占用同一个端口/同一块统一内存。**
+
+ComfyUI.dmg 图形化桌面版和源码版本质上都是 ComfyUI，只是安装方式不同：
+
+| 项 | ComfyUI.dmg 桌面版 | 源码版 `git clone ComfyUI` |
+|---|---|---|
+| 使用门槛 | 低，双击启动 | 稍高，需要命令行 |
+| Python 环境 | App 内部自带/托管 | 你自己建 `venv` |
+| 插件管理 | 通常也能用 Manager | 完全可控 |
+| HTTP API | 通常兼容，但要验证 | 标准兼容 |
+| 模型目录 | 由 App 自己管理，位置可能隐藏 | `~/AI/ComfyUI/models/`，清晰 |
+| 适合本项目 | ✅ 可用，但先验证 API | ⭐ 推荐，最可控 |
+
+#### 推荐选择
+
+如果你只是想**今晚先把链路跑通**，可以先用已安装的 **ComfyUI.dmg**，不用立刻重装源码版。只要它满足下面 4 个条件，就可以直接接入本项目：
+
+1. 浏览器能打开 `http://127.0.0.1:8188`
+2. 能安装/启用 `ComfyUI-LTXVideo`、`ComfyUI-GGUF` 等自定义节点
+3. 能加载 Sulphur 2 模型并手动生成视频
+4. 能导出 **API Format** 的 workflow JSON
+
+#### 先做 3 个兼容性检查
+
+打开 ComfyUI.dmg 后，在终端执行：
+
+```bash
+$ curl http://127.0.0.1:8188/system_stats
+```
+
+✅ 如果返回一段 JSON，说明 API 服务可用。
+
+再检查 `/prompt` 接口是否存在：
+
+```bash
+$ curl -X POST http://127.0.0.1:8188/prompt \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": {}, "client_id": "api-test"}'
+```
+
+✅ 如果返回 `error` 或 `invalid prompt` 之类，也没关系，说明接口存在。
+❌ 如果连接失败，说明桌面版没有监听 8188，或者端口不同。
+
+最后检查项目自检：
+
+```bash
+$ cd ~/projects/agents-video-pipeline
+$ source .venv/bin/activate
+$ python -m src.cli env
+```
+
+如果 `ComfyUI` 那行是 ✅，说明本项目能连上你的 ComfyUI.dmg。
+
+#### 最常见冲突：端口 8188 被占用
+
+如果你同时启动了：
+
+- ComfyUI.dmg 桌面版
+- 源码版 `python main.py --port 8188`
+
+那么第二个会报错：
+
+```text
+address already in use
+```
+
+解决办法二选一：
+
+```bash
+# 方案 A：只保留 ComfyUI.dmg，关闭源码版
+# 推荐给新手
+
+# 方案 B：源码版换端口
+$ python main.py --listen 127.0.0.1 --port 8189
+```
+
+如果你用了 8189，要在项目里设置：
+
+```bash
+$ export AGENTS_COMFYUI_BASE_URL="http://127.0.0.1:8189"
+$ python -m src.cli env
+```
+
+或者写进项目 `.env`：
+
+```bash
+AGENTS_COMFYUI_BASE_URL=http://127.0.0.1:8189
+```
+
+#### 最常见资源冲突：两个 ComfyUI 同时加载模型
+
+即使端口不同，也**不建议**同时开两个 ComfyUI，因为它们可能同时加载大模型，M1 32GB 很容易 swap / OOM。
+
+联调期间建议：
+
+```text
+只开一个 ComfyUI：
+- 要么只开 ComfyUI.dmg
+- 要么只开源码版
+不要两个一起开
+```
+
+#### 我建议你的今晚路线
+
+因为你已经装过 ComfyUI.dmg，建议先走这条最短路径：
+
+1. 启动 ComfyUI.dmg
+2. 浏览器确认 `http://127.0.0.1:8188` 能打开
+3. 跑 `curl http://127.0.0.1:8188/system_stats`
+4. 跑 `python -m src.cli env`
+5. 如果都 ✅，**阶段 4.1-4.4 的源码安装可以先跳过**，直接从 **4.5 安装 Manager/节点** 或从你桌面版已有的节点环境继续
+
+如果桌面版无法安装节点、找不到模型目录、或者 API 不通，再回到下面的源码版安装路径。
+
 ### 4.1 决定 ComfyUI 装在哪
 
 ComfyUI 是一个独立项目，**不放在我们这个仓库里面**。建议：
