@@ -1,13 +1,13 @@
 sulphur2_t2v:
-  # 在 ComfyUI Web UI 中加载 workflows/sulphur2_t2v.json
-  # 打开 Settings → Show node IDs，把每个节点的数字 ID 填到这里
-  # 详见 workflows/_placeholders.md
-  positive_prompt_node: ""
-  negative_prompt_node: ""
-  sampler_node: ""
-  empty_latent_node: ""
-  save_video_node: ""
+  # 来源：workflows/sulphur2_t2v.json（API 格式，4.10 里程碑导出）
+  # 节点角色识别证据见 docs/04 末尾或 git log。
+  positive_prompt_node: "6"   # CLIPTextEncode (Positive)
+  negative_prompt_node: "7"   # CLIPTextEncode (Negative)
+  sampler_node: "72"          # SamplerCustom（noise_seed 注入点）
+  empty_latent_node: "70"     # EmptyLTXVLatentVideo（width/height/length 注入点）
+  save_video_node: "79"       # SaveVideo（filename_prefix；注：fps 在 [78] CreateVideo，本流不注入也能工作）
 
+# I2V workflow（M2 阶段再填）
 sulphur2_i2v:
   positive_prompt_node: ""
   negative_prompt_node: ""

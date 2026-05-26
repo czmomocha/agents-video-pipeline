@@ -538,6 +538,14 @@ ComfyUI 已经有内置的 LTX-Video 工作流模板：
 ❌ 节点报红：Manager → Install Missing Custom Nodes
 ❌ 模型加载失败：检查文件路径是否对
 
+> 📍 **实战补丁（2026-05 M1 32GB 实测）**
+>
+> 第一次跑通用的极小参数：**512×320 × 49 帧（约 2 秒）× 30 步**，约 **3-5 分钟出片**。这是 M1 32GB 最稳的"基线参数"，**第一次画布跑通就用这一组**，别贪 1080p。
+>
+> 注意：ComfyUI 内置的 LTX-Video 模板默认正向 prompt 是英文示例（如 "A compact modern delivery drone..."），**别忘了改成你自己的 prompt** 再 Queue Prompt，否则你只是验证了模板默认值。
+>
+> 工作流里 LTXV 系列的 latent 节点（`EmptyLTXVLatentVideo`）用的帧数键名是 **`length`**（不是 `num_frames` 或 `video_length`），项目代码已兼容这个键名。
+
 ### 4.10 把 workflow 保存为我们项目要用的格式
 
 ComfyUI 工作流分两种导出：
@@ -554,6 +562,26 @@ $ cp ~/Downloads/workflow_api.json ~/projects/agents-video-pipeline/workflows/su
 ```
 
 > 💡 注意是 `cp`（复制），不要 `mv`（剪切）。原文件留着以后改 workflow。
+
+> 📍 **实战补丁（2026-05 M1 32GB 实测）**
+>
+> **强烈建议两份 JSON 都导一份**，分工明确：
+>
+> | 导出方式 | 用途 | 建议文件名 |
+> |---|---|---|
+> | `Workflow → Export` | 含画布坐标，给人看/继续在 ComfyUI 里调试 | `ltxv_t2v_milestone.json` |
+> | `Workflow → Export (API Format)` | **项目代码用**（POST 给 `/prompt` 接口的就是这个）| `ltxv_t2v_milestone_api.json` → 复制成 `sulphur2_t2v.json` |
+>
+> ⚠️ **API Format 这个菜单项默认隐藏！** 必须先在 ComfyUI 设置里勾 **`Enable Dev mode Options`**，`Workflow` 菜单才会多出 `Export (API Format)` 这一项。
+>
+> 两份 JSON 结构**完全不一样**，普通格式带 UI 元信息（`nodes`/`links`/`groups` 顶层数组），API 格式顶层就是 `node_id → node_def` 的扁平 map。**只有 API 格式能让 ComfyUI 服务端 `/prompt` 接口收**。
+>
+> 校验导出的是不是 API 格式：
+> ```bash
+> $ python3 -c "import json; wf=json.load(open('workflows/sulphur2_t2v.json')); print('nodes:', len(wf), '| keys[0]:', list(wf.keys())[0])"
+> # ✅ API 格式应输出类似: nodes: 13 | keys[0]: 6   (顶层就是节点 ID)
+> # ❌ 错的会输出: keys[0]: nodes 之类，或顶层是数组
+> ```
 
 ### 4.11 同样导出 I2V 工作流（图生视频，可选但推荐）
 
@@ -615,6 +643,37 @@ ComfyUI 浏览器界面：右上角齿轮图标 ⚙ → **Settings** → 搜索 
 > - 连到 `positive` → 正向
 > - 连到 `negative` → 负向
 > ComfyUI 里可以双击 CLIPTextEncode 节点的 widget 看到它当前的 prompt 文本，正向通常是英文描述场景，负向是 "low quality, blurry" 之类的。
+
+> 📍 **实战补丁：不用回浏览器数 ID，一行 python 全扫出来**
+>
+> 既然 4.10 已经把 API 格式的 JSON 拿到了（`workflows/sulphur2_t2v.json`），直接扫这个文件比在画布上一个个数节点快得多：
+>
+> ```bash
+> $ cd ~/projects/agents-video-pipeline
+> $ python3 -c "
+> import json
+> wf = json.load(open('workflows/sulphur2_t2v.json'))
+> for nid, node in wf.items():
+>     ct = node.get('class_type', '')
+>     title = node.get('_meta', {}).get('title', '')
+>     keys = list(node.get('inputs', {}).keys())
+>     print(f'  [{nid:>4}] {ct:<32} title={title!r:<28} inputs={keys[:6]}')
+> print()
+> print('=== 文本节点的 text 内容（区分 positive / negative） ===')
+> for nid, node in wf.items():
+>     if 'TextEncode' in node.get('class_type', ''):
+>         t = node.get('inputs', {}).get('text', '')
+>         if isinstance(t, str):
+>             print(f'  [{nid}] text = {t[:100]!r}')
+> "
+> ```
+>
+> 输出里直接按角色对号入座：
+> - **`positive_prompt_node`**：`CLIPTextEncode`，title 含 "Positive" 或 text 是英文场景描述
+> - **`negative_prompt_node`**：`CLIPTextEncode`，title 含 "Negative" 或 text 是 `"low quality, worst quality, ..."`
+> - **`sampler_node`**：`SamplerCustom` / `KSampler` / `LTXVideoSampler`，inputs 有 `seed` 或 `noise_seed`
+> - **`empty_latent_node`**：`EmptyLTXVLatentVideo` / `EmptyLatentVideo`，inputs 有 `width` `height` `length`（或 `num_frames`）
+> - **`save_video_node`**：`SaveVideo` / `VHS_VideoCombine`，inputs 有 `filename_prefix`
 
 ### 5.4 填写 config/node_mapping.yaml
 
@@ -782,6 +841,48 @@ metrics: {'composited_shots': 5, ...}
 ✅ 视频大致是 30 秒、5 段画面、没有声音
 
 如果到这一步通了，**项目最核心的视觉链路就跑通了**！
+
+> 📍 **实战补丁：M1 32GB 实测产能数据（2026-05）**
+>
+> 在跑完整 `cli render` 之前，**强烈建议先单跑一次 `cli shot`** 验证项目代码 → ComfyUI → 出片这一段链路本身通：
+>
+> ```bash
+> $ caffeinate -dims python -m src.cli shot \
+>     --prompt "a foggy mountain at dawn, cinematic" \
+>     --no-use-llm \
+>     --resolution 720p \
+>     --duration 2
+> ```
+>
+> 这个组合是 M1 32GB 的"安全区"参数，**故意避开两个雷区**：
+>
+> - `--no-use-llm`：跳过 PromptSmith → enhancer 一段，第一次冒烟先隔离 LLM 链路
+> - `--resolution 720p --duration 2`：1080p × 6s 在 M1 上**极易 OOM 或时长爆炸**
+>
+> **实测耗时（M1 32GB）：**
+>
+> | 配置 | 单镜头耗时 | 备注 |
+> |---|---|---|
+> | 720p × 48f (2s) × 30 步 | **~15.5 分钟** | 单镜头基线，跑通这个再做完整 render |
+> | 720p × 144f (6s) × 30 步 | **~45 分钟**（推算） | 默认 6s，但风险高 |
+> | 1080p × 144f (6s) × 30 步 | **大概率 OOM** | 不建议在 M1 上尝试 |
+>
+> 推论：`cli render` 跑 5 镜头 720p × 6s ≈ **3-4 小时**。如果想压时间到 1 小时内：
+> - 改 `--duration` 默认值为 2（5 × 15min ≈ 75min）
+> - 或把分辨率配置改到 540p / 480p
+>
+> **节点 ID 速查（仅供 LTX-Video 内置 T2V 模板参考，你导出的实际 ID 可能不同）：**
+>
+> ```yaml
+> sulphur2_t2v:
+>   positive_prompt_node: "6"     # CLIPTextEncode (Positive Prompt)
+>   negative_prompt_node: "7"     # CLIPTextEncode (Negative Prompt)
+>   sampler_node: "72"            # SamplerCustom（注意：用 noise_seed，不是 seed）
+>   empty_latent_node: "70"       # EmptyLTXVLatentVideo
+>   save_video_node: "79"         # SaveVideo
+> ```
+>
+> ⚠️ **小坑预警**：LTX-Video 内置 T2V 模板的 `SaveVideo` 节点**没有 `fps` / `frame_rate` 输入键**（fps 在另一个 `CreateVideo` 节点里，画布上设默认 24）。项目代码 `_inject_fps` 找不到 fps 键会**静默不注入**，不影响 M1 出片。
 
 ---
 

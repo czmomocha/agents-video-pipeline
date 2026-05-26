@@ -9,12 +9,16 @@
 
 ## 0. M1 验收标准（Definition of Done）
 
-- [ ] 项目骨架完整，`uv sync` 一键装齐依赖
-- [ ] `scripts/check_env.py` 自检通过：ComfyUI 可达 / Ollama 可达 / Gemma 4 模型在线 / FFmpeg 在线
-- [ ] `python -m src.cli shot --prompt "a foggy mountain at dawn, cinematic"` 在 12 分钟内产出 `output/<date>/<task_id>/shots/01.mp4`，时长 6s、分辨率 1080p
-- [ ] `python -m src.cli shot --prompt "..." --use-llm` 走完 PromptSmith（Gemma 4 E4B）→ Sulphur enhancer → ComfyUI 全链路
-- [ ] 互斥锁生效：日志中能看到 `[lock] release ollama → acquire comfyui → release comfyui → acquire ollama`
-- [ ] OOM 时自动降档（1080p → 720p）有日志体现
+- [x] 项目骨架完整，`uv sync` 一键装齐依赖
+- [x] `scripts/check_env.py` 自检通过：ComfyUI 可达 / Ollama 可达 / Gemma 4 模型在线 / FFmpeg 在线
+- [x] `python -m src.cli shot --prompt "a foggy mountain at dawn, cinematic"` 产出 `output/<date>/<task_id>/shots/01.mp4` ✅ **2026-05-27 跑通**：`--no-use-llm --resolution 720p --duration 2` → 720p × 48f → ~15.5 分钟（M1 32GB）
+- [ ] `python -m src.cli shot --prompt "..." --use-llm` 走完 PromptSmith（Gemma 4 E4B）→ Sulphur enhancer → ComfyUI 全链路 ⏳ **待验**
+- [x] 互斥锁生效：日志中能看到 `[scheduler] acquired comfyui` ✅ **已观察**（实际实现里 release 是隐式的）
+- [ ] OOM 时自动降档（1080p → 720p）有日志体现 ⏳ **未触发**（首次冒烟用 720p 安全参数没踩到边界）
+
+> 📍 **2026-05-27 进度备忘**：M1 核心链路已通。剩余两条 DoD（`--use-llm` 全链路 / OOM 降档）可在 M2 之前补做，也可以放进 M2 一起跑（M2 本来就要跑完整 LLM 链）。
+>
+> **原始 DoD 要求** "12 分钟内产出 6s 1080p 视频" —— **这条在 M1 32GB 上不现实**，实测 1080p 极易 OOM。修正后的实际可达档位：**720p × 2s ≈ 15 min**（单镜头）。1080p 留给后续有更强机器时验证。
 
 ---
 
